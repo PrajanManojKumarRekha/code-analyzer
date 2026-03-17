@@ -1,4 +1,4 @@
-import { Project, SourceFile, SyntaxKind } from "ts-morph";
+import { Project, SourceFile } from "ts-morph";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -170,11 +170,10 @@ export function buildIndex(targetDir: string): RepoIndex {
 
 export function formatIndexForPrompt(index: RepoIndex): string {
   const lines: string[] = [];
-  let totalTokenEstimate = 0;
 
-  for (const [path, entry] of Object.entries(index)) {
+  for (const [filePath, entry] of Object.entries(index)) {
     const pkg = entry.packageName ? ` [${entry.packageName}]` : "";
-    lines.push(`\n"${path}"${pkg} (${entry.sizeKb}kb)`);
+    lines.push(`\n"${filePath}"${pkg} (${entry.sizeKb}kb)`);
     for (const sig of entry.exports) {
       let line = "";
       if (sig.kind === "function") {
@@ -191,7 +190,6 @@ export function formatIndexForPrompt(index: RepoIndex): string {
       if (sig.docstring) line += `  // ${sig.docstring}`;
       lines.push(line);
     }
-    totalTokenEstimate += lines[lines.length - 1].length / 4;
   }
 
   return lines.join("\n");

@@ -1,70 +1,110 @@
 # Rocket.Chat Code Analyzer
 
-**GSoC 2026 — Agentic Inference Context Reduction Mechanics**
+This project is a prototype for reducing LLM context cost when analyzing large TypeScript repositories.
 
-Applicant: Prajan Manoj Kumar Rekha | Mentor: William Liu | Org: Rocket.Chat
+Instead of loading full source files up front, it builds a compact structural index of exports and reads implementation details only when needed.
 
----
+## Why This Exists
 
-## The Problem
+Large monorepos can consume a massive number of tokens before an assistant answers a single question. This project demonstrates a practical workflow to keep that cost predictable:
 
-Running gemini-cli against the Rocket.Chat monorepo costs ~1,883,381 tokens just to
-load the packages/core/src directory. That blows the free-tier Gemini quota before
-answering a single question. This prototype demonstrates the fix.
+1. Build a typed repository skeleton from exported symbols.
+2. Let the agent reason over the skeleton first.
+3. Read only the files and line ranges needed for deeper answers.
 
-## The Solution
+## Current Architecture
 
-Three-layer context reduction:
+The codebase currently has three primary pieces:
 
-1. **Typed Semantic Skeleton** (`src/repoIndex.ts`) — scans the repo with ts-morph,
-   extracts only exported function/interface/type signatures. ~14k tokens instead of ~1.8M.
+- `src/repoIndex.ts`
+     Walks a target directory, parses TypeScript with `ts-morph`, and extracts exported signatures for functions, classes, interfaces, type aliases, and enums.
 
-2. **Lazy File Reader** (`src/lazyFileReader.ts`) — agent fetches specific files on
-   demand, max 300 lines, only when it actually needs implementation detail.
+- `src/LazyFileReader.ts`
+     Reads file content on demand with controls for maximum lines, optional line ranges, and symbols-only mode. It also enforces a base directory boundary to prevent path traversal.
 
-3. **Query Intent Classifier** (`src/queryClassifier.ts`) — maps the user's question
-   to a Rocket.Chat domain (mobile / front-end / auth / etc.) and eliminates irrelevant
-   package subtrees before the skeleton is even built. *(Phase 2)*
+- `src/demo.ts`
+     End-to-end demonstration script. It builds the skeleton, simulates selective file reads, and logs benchmark output to `benchmark-results.json`.
 
-## Prototype Results (real measured numbers)
+There is also a tool registration example in `gemini-extension/tools/index.ts` showing how these capabilities can be surfaced in a Gemini-compatible tool layer.
 
-| Directory | Naive cost | Sparse index | Files read | Total tokens |
-|---|---|---|---|---|
-| tools/ (80 files) | ~309,377 tok | ~1,585 tok | 3 / 80 | ~7,770 tok |
-| core/src/ (682 files) | ~1,883,381 tok | ~13,927 tok | — | ~13,927 tok |
+## Project Layout
 
-## Quick Start
+```text
+src/
+     repoIndex.ts
+     LazyFileReader.ts
+     demo.ts
+gemini-extension/
+     tools/index.ts
+tests/
+     repoIndex.test.ts
+benchmark-results.json
+```
+
+## Setup
+
+Requirements:
+
+- Node.js 18+
+- npm
+
+Install dependencies:
+
 ```bash
 npm install
-$env:GEMINI_API_KEY = "your-key-here"      # PowerShell
+```
+
+Create local environment file:
+
+```bash
+copy .env.example .env
+```
+
+Then set your key in `.env`:
+
+```env
+GEMINI_API_KEY=your-key-here
+```
+
+PowerShell alternative (session-only):
+
+```powershell
+$env:GEMINI_API_KEY = "your-key-here"
+```
+
+## Usage
+
+Run the demo against a target directory:
+
+```bash
 npx tsx src/demo.ts ./src "What are the main exports in this codebase?"
 ```
 
-## Repo Structure
-```
-src/
-  repoIndex.ts          ← typed semantic skeleton builder (ts-morph)
-  lazyFileReader.ts     ← on-demand file fetcher (300-line cap)
-  demo.ts               ← end-to-end agentic loop demo
-  queryClassifier.ts    ← domain-scope intent classifier (coming Phase 2)
-gemini-extension/
-  tools/index.ts        ← shows how tools register in gemini-cli
-tests/
-  repoIndex.test.ts     ← unit tests
-benchmark-results.json  ← real measured token numbers
+Arguments:
+
+- Arg 1: target directory (default: `.`)
+- Arg 2: question string (default: a generic exports question)
+
+What the demo does:
+
+1. Builds an index of exported symbols.
+2. Estimates skeleton token cost vs naive full-read cost.
+3. Simulates reading only selected files.
+4. Appends a run record to `benchmark-results.json`.
+
+## Development Commands
+
+```bash
+npm run demo
+npm test
+npm run build
 ```
 
-## Architecture
-```
-User question
-     ↓
-queryClassifier.ts   → eliminates irrelevant RC domains
-     ↓
-repoIndex.ts         → builds typed skeleton (~14k tokens)
-     ↓
-Gemini agent         → reasons over skeleton
-     ↓ (only if needed)
-lazyFileReader.ts    → fetches specific file on demand
-     ↓
-Answer produced
-```
+## Priorities and Next Steps
+
+1. Replace the mock loop in `src/demo.ts` with a live tool-calling flow so the model can decide when to call `read_file`.
+2. Add query intent routing (planned classifier layer) to scope indexing by domain before parsing, reducing initial index size.
+3. Improve index fidelity with richer class details (constructors, overloads, visibility filters) while preserving compact output.
+4. Expand tests for `src/LazyFileReader.ts`, especially path boundary checks, symbols-only output, and line-range edge cases.
+5. Add cache and invalidation for index generation to avoid re-parsing unchanged repositories.
+6. Document an integration path from `gemini-extension/tools/index.ts` into a production CLI/plugin runtime.

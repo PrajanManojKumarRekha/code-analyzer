@@ -1,12 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
 import { buildIndex, formatIndexForPrompt, countNaiveTokens } from "./repoIndex";
-import { readFile } from "./LazyFileReader";
 import * as path from "path";
 import * as fs from "fs";
+import "dotenv/config";
 console.log("=== STARTING DEMO ===");
 
 const TARGET_DIR = process.argv[2] || ".";
 const QUESTION = process.argv[3] || "What are the main exported functions and interfaces?";
+
+const estimateTokens = (text: string): number => Math.round(text.length / 4);
 
 console.log("Target:", TARGET_DIR);
 console.log("Question:", QUESTION);
@@ -20,11 +22,11 @@ console.log("API key: found");
 
 async function main() {
   console.log("\n[ 1/4 ] Building typed semantic skeleton...");
-  
-  let index: any;
+
+  let index: ReturnType<typeof buildIndex>;
   try {
     index = buildIndex(TARGET_DIR);
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("ERROR building index:", e);
     process.exit(1);
   }
@@ -33,7 +35,7 @@ async function main() {
   console.log("       Files indexed:", filesIndexed);
 
   const skeletonText = formatIndexForPrompt(index);
-  const skeletonTokens = Math.round(skeletonText.length / 4);
+  const skeletonTokens = estimateTokens(skeletonText);
   const naiveTokens = countNaiveTokens(TARGET_DIR);
 
   console.log("       Skeleton tokens:    ~" + skeletonTokens.toLocaleString());
@@ -76,23 +78,24 @@ ${skeletonText}`;
 
   // Simulate the agent reading 2 files on demand
   console.log("\n[ 3/4 ] Simulating lazy file reads...");
-  
+
   let fileTokens = 0;
   let filesRead = 0;
-const filePaths = Object.keys(index).slice(0, 2);
+  const filePaths = Object.keys(index).slice(0, 2);
   for (const filePath of filePaths) {
     const fullPath = path.join(TARGET_DIR, filePath);
     try {
       const raw = fs.readFileSync(fullPath, "utf-8");
       const lines = raw.split("\n").slice(0, 300);
       const content = lines.join("\n");
-      const tokenEstimate = Math.round(content.length / 4);
+      const tokenEstimate = estimateTokens(content);
       filesRead++;
       fileTokens += tokenEstimate;
       console.log(`       -> read: ${filePath} (~${tokenEstimate} tokens, capped at 300 lines)`);
       console.log(`          ${lines[0]?.slice(0, 80)}`);
-    } catch (e: any) {
-      console.log(`       -> skip: ${filePath} (${e.message})`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.log(`       -> skip: ${filePath} (${message})`);
     }
   }
 
@@ -128,14 +131,18 @@ const filePaths = Object.keys(index).slice(0, 2);
     question: QUESTION,
     mode: "mock — skeleton + lazy reader demonstrated without live API call",
   };
-  let existing: any[] = [];
-  try { existing = JSON.parse(fs.readFileSync("benchmark-results.json", "utf-8")); } catch {}
+  let existing: typeof bench[] = [];
+  try {
+    existing = JSON.parse(fs.readFileSync("benchmark-results.json", "utf-8"));
+  } catch {
+    // File may not exist yet; start a new benchmark log.
+  }
   existing.push(bench);
   fs.writeFileSync("benchmark-results.json", JSON.stringify(existing, null, 2));
   console.log("\nBenchmark saved to benchmark-results.json");
 }
 
-main().catch(e => {
+main().catch((e: unknown) => {
   console.error("UNHANDLED ERROR:", e);
   process.exit(1);
 });

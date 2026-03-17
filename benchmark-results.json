@@ -58,5 +58,29 @@
     "fileTokens": 2928,
     "question": "What are the main exports?",
     "mode": "mock — skeleton + lazy reader demonstrated without live API call"
+  },
+  {
+    "timestamp": "2026-03-17T19:25:39.131Z",
+    "targetDir": "C:\\Users\\praja\\OneDrive - Texas State University\\GSOC\\RocketChat\\code-analyzer\\src",
+    "filesIndexed": 2,
+    "skeletonTokens": 385,
+    "naiveTokens": 3986,
+    "totalSessionTokens": 2953,
+    "filesReadOnDemand": 2,
+    "fileTokens": 2568,
+    "question": "What are the main exports?",
+    "mode": "mock — skeleton + lazy reader demonstrated without live API call"
+  },
+  {
+    "timestamp": "2026-03-17T19:26:31.942Z",
+    "targetDir": "C:\\Users\\praja\\Gemini-CLI\\gemini-cli\\packages\\core\\src\\tools",
+    "filesIndexed": 38,
+    "skeletonTokens": 11324,
+    "naiveTokens": 309357,
+    "totalSessionTokens": 14252,
+    "filesReadOnDemand": 2,
+    "fileTokens": 2928,
+    "question": "What are the main exports in the tools package?",
+    "mode": "mock — skeleton + lazy reader demonstrated without live API call"
   }
 ]
