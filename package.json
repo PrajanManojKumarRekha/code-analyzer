@@ -1,0 +1,31 @@
+{
+  "name": "code-analyzer",
+  "version": "0.1.0",
+  "description": "Agentic inference context reduction for Rocket.Chat — GSoC 2026",
+  "main": "dist/demo.js",
+  "scripts": {
+    "build": "tsc",
+    "demo": "npx tsx src/demo.ts",
+    "test": "jest"
+  },
+  "keywords": ["rocket.chat", "gemini", "context-reduction", "ts-morph", "gsoc"],
+  "author": "Prajan Manoj Kumar Rekha",
+  "license": "MIT",
+  "dependencies": {
+    "@google/genai": "^0.7.0",
+    "ts-morph": "^24.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.0.0",
+    "@types/node": "^22.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.ts"]
+  }
+}
