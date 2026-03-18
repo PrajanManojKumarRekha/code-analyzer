@@ -59,19 +59,35 @@ function extractSignatures(sourceFile: SourceFile): TypedSignature[] {
   // Exported classes
   for (const cls of sourceFile.getClasses()) {
     if (!cls.isExported()) continue;
+    
+    const details: string[] = [];
+
+    // Constructor
+    for (const ctor of cls.getConstructors()) {
+      const params = ctor.getParameters()
+        .map(p => `${p.getName()}: ${p.getType().getText()}`)
+        .join(", ");
+      details.push(`constructor(${params})`);
+    }
+
+    // Methods
     const methods = cls.getMethods()
-      .filter(m => m.getScope() === undefined || m.getScope() === "public")
+      .filter(m => m.getScope() === undefined || m.getScope() === "public" || m.getScope() === "protected")
       .slice(0, 5)
       .map(m => {
+        const scope = m.getScope() ? `${m.getScope()} ` : "";
         const params = m.getParameters()
           .map(p => `${p.getName()}: ${p.getType().getText()}`)
           .join(", ");
-        return `${m.getName()}(${params}): ${m.getReturnType().getText()}`;
+        return `${scope}${m.getName()}(${params}): ${m.getReturnType().getText()}`;
       });
+    
+    details.push(...methods);
+
     sigs.push({
       name: cls.getName() || "AnonymousClass",
       kind: "class",
-      params: methods.join(" | "),
+      params: details.join(" | "),
       returnType: "",
     });
   }
@@ -133,7 +149,7 @@ export function buildIndex(targetDir: string): RepoIndex {
       if (entry.isDirectory()) {
         walk(full);
       } else if (
-        entry.name.endsWith(".ts") &&
+        (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) &&
         !entry.name.endsWith(".d.ts") &&
         !entry.name.endsWith(".test.ts") &&
         !entry.name.endsWith(".spec.ts")
@@ -203,7 +219,7 @@ export function countNaiveTokens(targetDir: string): number {
       if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".git") continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
-      else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) {
+      else if ((entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) && !entry.name.endsWith(".d.ts")) {
         try {
           const content = fs.readFileSync(full, "utf-8");
           total += Math.round(content.length / 4);

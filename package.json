@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc",
     "demo": "npx tsx src/demo.ts",
+    "mcp:server": "npx tsx src/mcpLazyServer.ts",
+    "demo:mcp": "npx tsx src/demo.ts --mode mcp",
     "test": "jest"
   },
   "keywords": ["rocket.chat", "gemini", "context-reduction", "ts-morph", "gsoc"],
@@ -23,6 +25,7 @@
     "@types/jest": "^29.0.0",
     "@types/node": "^22.0.0",
     "jest": "^29.0.0",
+    "jest-util": "^29.7.0",
     "ts-jest": "^29.0.0"
   },
   "jest": {

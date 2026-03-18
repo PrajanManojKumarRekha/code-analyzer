@@ -1,0 +1,26 @@
+[
+  {
+    "timestamp": "2026-03-17T00:00:00.000Z",
+    "mode": "mcp-lazy-loading-option-2",
+    "targetDir": "gemini-cli/packages/core/src/tools",
+    "filesIndexed": 38,
+    "skeletonTokens": 11324,
+    "naiveTokens": 309357,
+    "filesReadOnDemand": 2,
+    "fileTokens": 2928,
+    "totalSessionTokens": 14252,
+    "question": "What are the main exports in the tools package?"
+  },
+  {
+    "timestamp": "2026-03-17T00:00:00.000Z",
+    "mode": "mcp-lazy-loading-option-2",
+    "targetDir": "./src",
+    "filesIndexed": 2,
+    "skeletonTokens": 385,
+    "naiveTokens": 3986,
+    "filesReadOnDemand": 2,
+    "fileTokens": 2568,
+    "totalSessionTokens": 2953,
+    "question": "What are the main exports in this codebase?"
+  }
+]

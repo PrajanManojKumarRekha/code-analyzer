@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "rocketChatLazyIndex": {
+      "command": "npm",
+      "args": [
+        "run",
+        "mcp:server"
+      ],
+      "cwd": "<ABSOLUTE_PATH_TO_CODE_ANALYZER>",
+      "env": {}
+    }
+  }
+}
