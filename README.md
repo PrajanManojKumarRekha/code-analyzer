@@ -237,6 +237,62 @@ Method 2 (MCP + Gemini CLI lazy loading):
 2. Lazy fetches: implementation is retrieved only when necessary.
 3. Scoped reads: `symbolsOnly`, `lineRange`, and `maxLines` keep payloads bounded.
 
+## Working Example: Message Sending Analysis in Rocket.Chat
+
+This project was validated against the Rocket.Chat codebase to trace how messages are sent through the system. The analysis demonstrates both the skeletal index approach and live MCP tool-calling.
+
+### Message Sending Flow (Traced via repo_index + read_file)
+
+The MCP server successfully extracted and analyzed the complete message pipeline:
+
+1. **Entry Point (Meteor Method)**: The client calls the `sendMessage` Meteor method, which performs initial checks, enforces rate limits, and triggers `executeSendMessage`.
+
+2. **Validation & Preparation (executeSendMessage)**: This step validates the message size, ensures the room exists, checks timestamps, and confirms the sender's identity. It also verifies if the user has permission to send messages in the specific room.
+
+3. **Core Logic (sendMessage Function)**:
+   - **Apps-Engine Hooks**: Triggers `IPreMessageSentPrevent`, `IPreMessageSentExtend`, and `IPreMessageSentModify` events.
+   - **beforeSave Hooks**: Executes various filters (bad words, markdown, mentions, etc.) through the `Message.beforeSave` service call.
+   - **Persistence**: The message is inserted into the Messages collection.
+   - **Post-Persistence Apps-Engine**: Triggers `IPostMessageSent` or `IPostSystemMessageSent`.
+
+4. **Post-Save Actions (afterSaveMessage)**:
+   - **Callbacks**: Runs the `afterSaveMessage` callback, which includes `notifyUsersOnMessage`.
+   - **Notifications & Updates**: Updates room activity trackers, adjusts user subscription unread counts/alerts, and broadcasts changes to clients via DDP (e.g., `notifyOnRoomChangedById`).
+   - **Service-Level Post-Save**: `Message.afterSave` handles additional asynchronous tasks like OEmbed link parsing.
+
+### MCP Server Status
+
+The MCP server is **running and successfully integrated with gemini-cli**:
+
+```
+Configured MCP servers:
+- rocketChatLazyIndex - Ready (2 tools)
+  Tools:
+    - mcp_rocketChatLazyIndex_read_file
+    - mcp_rocketChatLazyIndex_repo_index
+```
+
+### Live Performance Metrics
+
+Session metrics from querying "How does message sending work in Rocket.Chat?":
+
+- **Session ID**: f1718aad-c001-4b0f-9bbd-27b662c82aa0
+- **Tool Calls**: 10 (9 successful, 1 duplicate)
+- **Success Rate**: 90.0%
+- **User Confirmation**: 100.0% (9 reviewed)
+
+**Wall Time**: 2m 42s  
+**Agent Active**: 47.7s
+
+- **API Time**: 24.0s (50.2%)
+- **Tool Time**: 23.7s (49.8%)
+
+**Token Efficiency**:
+- **gemini-2.5-flash-lite**: 1 request → 1,087 input tokens + 86 output tokens
+- **gemini-3-flash-preview**: 11 requests → 81,037 input tokens (207,415 from cache) + 1,412 output tokens
+
+**Savings Highlight**: 207,415 (71.6%) of input tokens were served from cache, directly demonstrating the lazy-loading efficiency of the MCP approach.
+
 ## Development Commands
 
 ```bash
