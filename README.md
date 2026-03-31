@@ -27,6 +27,11 @@ The codebase currently has three primary pieces:
 
 The project now also includes a standard Gemini CLI extension manifest at the repository root, so the repo can be linked directly as an extension during development.
 
+It now includes layered caching for both repository indexing and on-demand file reads:
+
+- In-memory + disk cache for `repo_index`
+- In-memory cache for `read_file` raw snapshots and symbols-only views
+- MCP tools for cache stats and explicit cache invalidation
 ## Project Layout
 
 ```text
@@ -321,20 +326,26 @@ The MCP server is **running and successfully integrated with gemini-cli**:
 
 ```
 Configured MCP servers:
-- rocketChatLazyIndex - Ready (2 tools)
+- rocketChatLazyIndex - Ready (4 tools)
   Tools:
     - mcp_rocketChatLazyIndex_read_file
     - mcp_rocketChatLazyIndex_repo_index
+          - mcp_rocketChatLazyIndex_index_cache_stats
+          - mcp_rocketChatLazyIndex_index_cache_invalidate
 ```
 
 ### Live Performance Metrics
 
-Session metrics from querying "How does message sending work in Rocket.Chat?":
+- Latest measured run (`Rocket.Chat/apps/meteor/server`): 307,582 naive tokens reduced to 12,002 total session tokens.
+- Files indexed: 148
+- Index cache: enabled (`indexCacheHit: false` on rebuild run)
 
 - **Session ID**: f1718aad-c001-4b0f-9bbd-27b662c82aa0
 - **Tool Calls**: 10 (9 successful, 1 duplicate)
 - **Success Rate**: 90.0%
-- **User Confirmation**: 100.0% (9 reviewed)
+- Latest measured run (`Rocket.Chat/apps/meteor/server`): 307,582 naive tokens reduced to 11,595 total session tokens.
+- Files indexed: 148
+- Index cache: enabled (`indexCacheHit: true`)
 
 **Wall Time**: 2m 42s  
 **Agent Active**: 47.7s
