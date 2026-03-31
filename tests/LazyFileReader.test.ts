@@ -1,7 +1,7 @@
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-import { readFile } from "../src/LazyFileReader";
+import { clearReadFileCache, getReadFileCacheStats, readFile } from "../src/LazyFileReader";
 
 describe("LazyFileReader", () => {
   let tmpDir: string;
@@ -28,6 +28,7 @@ describe("LazyFileReader", () => {
   });
 
   afterEach(() => {
+    clearReadFileCache();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -88,5 +89,19 @@ describe("LazyFileReader", () => {
     expect(() => {
       readFile(binaryFile, { baseDir: tmpDir });
     }).toThrow("Binary file");
+  });
+
+  test("tracks and clears read cache stats", () => {
+    readFile(sampleFilePath, { baseDir: tmpDir, symbolsOnly: true });
+    readFile(sampleFilePath, { baseDir: tmpDir, symbolsOnly: false });
+
+    const warmStats = getReadFileCacheStats();
+    expect(warmStats.raw.size).toBeGreaterThan(0);
+    expect(warmStats.symbols.size).toBeGreaterThan(0);
+
+    clearReadFileCache();
+    const cleared = getReadFileCacheStats();
+    expect(cleared.raw.size).toBe(0);
+    expect(cleared.symbols.size).toBe(0);
   });
 });

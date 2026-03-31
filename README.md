@@ -25,7 +25,7 @@ The codebase currently has three primary pieces:
 - `src/demo.ts`
      End-to-end demonstration script. It builds the skeleton, simulates selective file reads, and logs benchmark output to `benchmark-results.json`.
 
-There is also a tool registration example in `gemini-extension/tools/index.ts` showing how these capabilities can be surfaced in a Gemini-compatible tool layer.
+The project now also includes a standard Gemini CLI extension manifest at the repository root, so the repo can be linked directly as an extension during development.
 
 ## Project Layout
 
@@ -34,10 +34,14 @@ src/
      repoIndex.ts
      LazyFileReader.ts
      demo.ts
+gemini-extension.json
+GEMINI.md
 gemini-extension/
+     mcp/mcp-server.example.json
      tools/index.ts
 tests/
      repoIndex.test.ts
+     mcpLazyServer.test.ts
 benchmark-results.json
 benchmark-results-mcp.json
 ```
@@ -53,6 +57,12 @@ Install dependencies:
 
 ```bash
 npm install
+```
+
+Build the project (required for extension runtime):
+
+```bash
+npm run build
 ```
 
 Create local environment file:
@@ -114,6 +124,8 @@ This is useful for questions like:
      MCP stdio server exposing two tools:
      - `repo_index` to return a typed skeleton for a target directory
      - `read_file` to lazily fetch only needed file content
+     - `index_cache_stats` to inspect index/read cache status
+     - `index_cache_invalidate` to clear stale cache state
 
 - `gemini-extension/mcp/mcp-server.example.json`
      Example MCP server registration file for gemini-cli style configurations.
@@ -126,28 +138,28 @@ npm run mcp:server
 
 If you typed `npm runmcp:server`, that command will fail. Use `npm run mcp:server` with a space after `run`.
 
-### Integrate with gemini-cli
+### Integrate with gemini-cli (standard extension flow)
 
-1. Open `gemini-extension/mcp/mcp-server.example.json`.
-2. Confirm the `cwd` points to your local `code-analyzer` path.
-3. In your gemini-cli MCP configuration, add this server under `mcpServers`:
+1. Build the extension once:
 
-```json
-{
-     "mcpServers": {
-          "rocketChatLazyIndex": {
-               "command": "npm",
-               "args": ["run", "mcp:server"],
-               "cwd": "<ABSOLUTE_PATH_TO_CODE_ANALYZER>",
-               "env": {}
-          }
-     }
-}
+```bash
+npm run build
 ```
 
-4. Save config and restart gemini-cli.
-5. If you are not sure where to put this config, use your gemini-cli MCP config location and merge the `mcpServers.rocketChatLazyIndex` block.
-6. Ask gemini-cli to use MCP tools with an instruction like:
+2. Link this repository as a Gemini extension:
+
+```bash
+gemini extensions link .
+```
+
+3. Restart gemini-cli.
+4. Verify the extension is active:
+
+```bash
+gemini extensions list
+```
+
+5. Ask gemini-cli to use MCP tools with an instruction like:
 
 ```text
 Use MCP tools for code analysis.
@@ -155,9 +167,30 @@ Call repo_index first for targetDir="<ABSOLUTE_PATH_TO_TARGET_REPO_SUBDIR>".
 Then call read_file only when implementation details are needed.
 ```
 
-7. For deep architecture questions such as message flow, auth flow, permissions, and E2E encryption, keep the same pattern:
+### How to call Gemini from terminal
+
+1. Start Gemini CLI:
+
+```bash
+gemini
+```
+
+2. In the interactive prompt, ask a scoped question and force tool usage:
+
+```text
+How does message sending work in Rocket.Chat?
+Use MCP tools.
+Call repo_index first with targetDir="<ABSOLUTE_PATH_TO_TARGET_REPO_SUBDIR>".
+Then call read_file only for relevant files.
+```
+
+3. Confirm the tool calls appear in output (`repo_index`, then `read_file`).
+
+6. For deep architecture questions such as message flow, auth flow, permissions, and E2E encryption, keep the same pattern:
       - `repo_index` once at the beginning
       - `read_file` only for specific files and sections
+
+The `gemini-extension.json` manifest uses `${extensionPath}` so it runs cross-platform without hardcoded absolute paths.
 
 ### Full walkthrough on Windows
 
@@ -173,15 +206,20 @@ cd "<ABSOLUTE_PATH_TO_CODE_ANALYZER>"
 npm install
 ```
 
-3. Start MCP server (correct command):
+3. Build before starting MCP server:
+
+```powershell
+npm run build
+```
+
+4. Start MCP server (correct command):
 
 ```powershell
 npm run mcp:server
 ```
 
-4. If you typed `npm runmcp:server`, it fails because `run` and script name must be separate.
-5. Register the server in gemini-cli using the JSON block above.
-6. Restart gemini-cli so it reloads MCP servers.
+5. If you typed `npm runmcp:server`, it fails because `run` and script name must be separate.
+6. For extension-based integration, run `gemini extensions link .` once and restart gemini-cli.
 7. Ask one of your target questions and explicitly request MCP tool usage:
 
 ```text
@@ -199,6 +237,23 @@ npx tsx src/demo.ts --mode mcp "<ABSOLUTE_PATH_TO_TARGET_REPO_SUBDIR>" "How are 
 ```
 
 10. MCP mode appends results to `benchmark-results-mcp.json` and keeps `benchmark-results.json` unchanged.
+
+### Expected index cache behavior
+
+- First `repo_index` call on a target directory: cache miss (index build).
+- Repeated `repo_index` call in the same process: memory cache hit.
+- Repeated `repo_index` call after restart with no relevant changes: disk cache hit.
+- Any indexable file change: cache invalidates and rebuilds automatically.
+- Use `forceRefresh=true` in `repo_index` to bypass cache manually.
+- Use `index_cache_invalidate` to clear index cache and optionally clear `read_file` cache.
+
+Cache metadata is returned in the `repo_index` response as:
+
+- `cache.enabled`
+- `cache.hit`
+- `cache.layer`
+- `cache.cacheFile`
+- `cache.fingerprint`
 
 ### Verify MCP server is reachable
 
@@ -298,6 +353,7 @@ Session metrics from querying "How does message sending work in Rocket.Chat?":
 ```bash
 npm run demo
 npm run mcp:server
+npm run mcp:server:dev
 npm test
 npm run build
 ```
@@ -308,5 +364,5 @@ npm run build
 2. Add query intent routing (planned classifier layer) to scope indexing by domain before parsing, reducing initial index size.
 3. Improve index fidelity with richer class details (constructors, overloads, visibility filters) while preserving compact output.
 4. Expand tests for `src/LazyFileReader.ts`, especially path boundary checks, symbols-only output, and line-range edge cases.
-5. Add cache and invalidation for index generation to avoid re-parsing unchanged repositories.
-6. Document an integration path from `gemini-extension/tools/index.ts` into a production CLI/plugin runtime.
+5. Add optional TTL/size limits and cleanup for `.cache/repo-index` in long-running environments.
+6. Document a release checklist for publishing this extension with versioned GitHub releases.

@@ -1,7 +1,14 @@
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-import { buildIndex, formatIndexForPrompt, countNaiveTokens } from "../src/repoIndex";
+import {
+  buildIndex,
+  buildIndexWithCache,
+  countNaiveTokens,
+  formatIndexForPrompt,
+  getIndexCacheStats,
+  invalidateIndexCache,
+} from "../src/repoIndex";
 
 describe("repoIndex", () => {
   let tmpDir: string;
@@ -86,5 +93,61 @@ describe("repoIndex", () => {
     );
     const tokens = countNaiveTokens(tmpDir);
     expect(tokens).toBeGreaterThan(0);
+  });
+
+  test("reuses cache when source files are unchanged", () => {
+    fs.writeFileSync(path.join(tmpDir, "sample.ts"), `export function a(): void {}\n`);
+
+    const cacheDir = path.join(tmpDir, ".cache");
+    const first = buildIndexWithCache(tmpDir, { useCache: true, cacheDir });
+    const second = buildIndexWithCache(tmpDir, { useCache: true, cacheDir });
+
+    expect(first.cache.enabled).toBe(true);
+    expect(first.cache.hit).toBe(false);
+    expect(second.cache.hit).toBe(true);
+    expect(Object.keys(first.index)).toEqual(Object.keys(second.index));
+  });
+
+  test("invalidates cache when an indexable file changes", () => {
+    const filePath = path.join(tmpDir, "sample.ts");
+    fs.writeFileSync(filePath, `export function a(): void {}\n`);
+
+    const cacheDir = path.join(tmpDir, ".cache");
+    buildIndexWithCache(tmpDir, { useCache: true, cacheDir });
+    fs.writeFileSync(filePath, `export function a(): void {}\nexport function b(): void {}\n`);
+    const rebuilt = buildIndexWithCache(tmpDir, { useCache: true, cacheDir });
+
+    expect(rebuilt.cache.hit).toBe(false);
+    const entry = Object.values(rebuilt.index)[0];
+    const exportNames = entry.exports.map(exp => exp.name);
+    expect(exportNames).toContain("b");
+  });
+
+  test("supports explicit cache invalidation", () => {
+    fs.writeFileSync(path.join(tmpDir, "sample.ts"), `export function a(): void {}\n`);
+
+    const cacheDir = path.join(tmpDir, ".cache");
+    const warm = buildIndexWithCache(tmpDir, { useCache: true, cacheDir });
+    expect(warm.cache.hit).toBe(false);
+
+    const hot = buildIndexWithCache(tmpDir, { useCache: true, cacheDir });
+    expect(hot.cache.hit).toBe(true);
+
+    invalidateIndexCache(tmpDir, { cacheDir });
+
+    const after = buildIndexWithCache(tmpDir, { useCache: true, cacheDir });
+    expect(after.cache.hit).toBe(false);
+  });
+
+  test("returns index cache stats", () => {
+    fs.writeFileSync(path.join(tmpDir, "sample.ts"), `export function a(): void {}\n`);
+
+    const cacheDir = path.join(tmpDir, ".cache");
+    buildIndexWithCache(tmpDir, { useCache: true, cacheDir });
+
+    const stats = getIndexCacheStats(tmpDir, { cacheDir });
+    expect(stats.memory.maxEntries).toBeGreaterThan(0);
+    expect(stats.disk.cacheFile).toContain(".json");
+    expect(stats.disk.exists).toBe(true);
   });
 });

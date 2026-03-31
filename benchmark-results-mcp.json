@@ -22,5 +22,32 @@
     "fileTokens": 2568,
     "totalSessionTokens": 2953,
     "question": "What are the main exports in this codebase?"
+  },
+  {
+    "timestamp": "2026-03-18T22:15:23.577Z",
+    "targetDir": "C:\\Users\\praja\\OneDrive - Texas State University\\GSOC\\RocketChat\\Rocket.Chat\\apps\\meteor\\server",
+    "filesIndexed": 148,
+    "skeletonTokens": 11595,
+    "naiveTokens": 307582,
+    "totalSessionTokens": 11595,
+    "filesReadOnDemand": 0,
+    "fileTokens": 0,
+    "question": "How does message sending work in Rocket.Chat?",
+    "mode": "mcp-handoff — use npm run mcp:server with gemini-cli tools/call"
+  },
+  {
+    "timestamp": "2026-03-31T16:01:20.278Z",
+    "targetDir": "C:\\Users\\praja\\OneDrive - Texas State University\\GSOC\\RocketChat\\code-analyzer",
+    "filesIndexed": 3,
+    "skeletonTokens": 976,
+    "naiveTokens": 15427,
+    "totalSessionTokens": 976,
+    "filesReadOnDemand": 0,
+    "fileTokens": 0,
+    "indexCacheEnabled": true,
+    "indexCacheHit": true,
+    "indexCacheFile": "C:\\Users\\praja\\OneDrive - Texas State University\\GSOC\\RocketChat\\code-analyzer\\.cache\\repo-index\\49c7bb71056d9510.json",
+    "question": "Summarize exported APIs and caching behavior",
+    "mode": "mcp-handoff — use npm run mcp:server with gemini-cli tools/call"
   }
 ]

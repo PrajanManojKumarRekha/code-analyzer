@@ -145,6 +145,8 @@ describe("mcpLazyServer", () => {
     const toolNames = listResult.tools.map(t => t.name);
     expect(toolNames).toContain("repo_index");
     expect(toolNames).toContain("read_file");
+    expect(toolNames).toContain("index_cache_invalidate");
+    expect(toolNames).toContain("index_cache_stats");
 
     const indexCall = await c.request("tools/call", {
       name: "repo_index",
@@ -156,10 +158,15 @@ describe("mcpLazyServer", () => {
       baseDir: string;
       filesIndexed: number;
       skeleton: string;
+      cache: {
+        enabled: boolean;
+        hit: boolean;
+      };
     };
 
     expect(indexPayload.filesIndexed).toBe(1);
     expect(indexPayload.skeleton).toContain("sendMessage");
+    expect(indexPayload.cache.enabled).toBe(true);
 
     const fileCall = await c.request("tools/call", {
       name: "read_file",
@@ -178,5 +185,17 @@ describe("mcpLazyServer", () => {
 
     expect(filePayload.mode).toBe("symbols-only");
     expect(filePayload.content).toContain("export function sendMessage");
+
+    const cacheStats = await c.request("tools/call", {
+      name: "index_cache_stats",
+      arguments: { targetDir: tmpDir },
+    });
+    expect(cacheStats.error).toBeUndefined();
+
+    const invalidate = await c.request("tools/call", {
+      name: "index_cache_invalidate",
+      arguments: { targetDir: tmpDir, clearReadFileCache: true },
+    });
+    expect(invalidate.error).toBeUndefined();
   });
 });

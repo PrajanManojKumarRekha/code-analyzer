@@ -22,5 +22,44 @@
     "fileTokens": 2928,
     "question": "What are the main exports in the tools package?",
     "mode": "mock — skeleton + lazy reader demonstrated without live API call"
+  },
+  {
+    "timestamp": "2026-03-18T22:07:49.367Z",
+    "targetDir": "Rocket.Chat\\apps\\meteor\\server",
+    "filesIndexed": 148,
+    "skeletonTokens": 11595,
+    "naiveTokens": 307582,
+    "totalSessionTokens": 12002,
+    "filesReadOnDemand": 2,
+    "fileTokens": 407,
+    "question": "How does message sending work in Rocket.Chat?",
+    "mode": "mock — skeleton + lazy reader demonstrated without live API call"
+  },
+  {
+    "timestamp": "2026-03-18T22:22:21.973Z",
+    "targetDir": "C:\\Users\\praja\\OneDrive - Texas State University\\GSOC\\RocketChat\\Rocket.Chat\\apps\\meteor\\server",
+    "filesIndexed": 148,
+    "skeletonTokens": 11595,
+    "naiveTokens": 307582,
+    "totalSessionTokens": 12002,
+    "filesReadOnDemand": 2,
+    "fileTokens": 407,
+    "question": "How does message sending work in Rocket.Chat?",
+    "mode": "mock — skeleton + lazy reader demonstrated without live API call"
+  },
+  {
+    "timestamp": "2026-03-31T16:01:16.460Z",
+    "targetDir": "C:\\Users\\praja\\OneDrive - Texas State University\\GSOC\\RocketChat\\code-analyzer",
+    "filesIndexed": 3,
+    "skeletonTokens": 976,
+    "naiveTokens": 15427,
+    "totalSessionTokens": 2985,
+    "filesReadOnDemand": 2,
+    "fileTokens": 2009,
+    "indexCacheEnabled": true,
+    "indexCacheHit": false,
+    "indexCacheFile": "C:\\Users\\praja\\OneDrive - Texas State University\\GSOC\\RocketChat\\code-analyzer\\.cache\\repo-index\\49c7bb71056d9510.json",
+    "question": "Summarize exported APIs and caching behavior",
+    "mode": "mock — skeleton + lazy reader demonstrated without live API call"
   }
 ]

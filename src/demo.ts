@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { buildIndex, formatIndexForPrompt, countNaiveTokens } from "./repoIndex";
+import { buildIndexWithCache, formatIndexForPrompt, countNaiveTokens } from "./repoIndex";
 import { readFile } from "./LazyFileReader";
 import * as path from "path";
 import * as fs from "fs";
@@ -48,16 +48,25 @@ console.log("API key: found");
 async function main() {
   console.log("\n[ 1/4 ] Building typed semantic skeleton...");
 
-  let index: ReturnType<typeof buildIndex>;
+  let indexResult: ReturnType<typeof buildIndexWithCache>;
   try {
-    index = buildIndex(TARGET_DIR);
+    indexResult = buildIndexWithCache(TARGET_DIR, { useCache: true });
   } catch (e: unknown) {
     console.error("ERROR building index:", e);
     process.exit(1);
   }
 
+  const index = indexResult.index;
+  const cacheStatus = indexResult.cache;
+
   const filesIndexed = Object.keys(index).length;
   console.log("       Files indexed:", filesIndexed);
+  if (cacheStatus.enabled) {
+    console.log("       Index cache hit:", cacheStatus.hit ? "yes" : "no");
+    if (cacheStatus.cacheFile) {
+      console.log("       Cache file:", cacheStatus.cacheFile);
+    }
+  }
 
   const skeletonText = formatIndexForPrompt(index);
   const skeletonTokens = estimateTokens(skeletonText);
@@ -111,6 +120,9 @@ ${skeletonText}`;
       totalSessionTokens: skeletonTokens,
       filesReadOnDemand: 0,
       fileTokens: 0,
+      indexCacheEnabled: cacheStatus.enabled,
+      indexCacheHit: cacheStatus.hit,
+      indexCacheFile: cacheStatus.cacheFile,
       question: QUESTION,
       mode: "mcp-handoff — use npm run mcp:server with gemini-cli tools/call",
     };
@@ -129,8 +141,8 @@ ${skeletonText}`;
 
   if (RUN_MODE === "live") {
     console.log("\n[ 2/4 ] Starting live agentic loop (Gemini API)...");
-    
-    const model = ai.getGenerativeModel({
+
+    const model = (ai as any).getGenerativeModel({
       model: "gemini-2.0-flash",
       tools: [{ functionDeclarations: tools }],
       systemInstruction: systemPrompt,
@@ -211,6 +223,9 @@ ${skeletonText}`;
       totalSessionTokens: totalTokens,
       filesReadOnDemand: filesRead,
       fileTokens,
+      indexCacheEnabled: cacheStatus.enabled,
+      indexCacheHit: cacheStatus.hit,
+      indexCacheFile: cacheStatus.cacheFile,
       question: QUESTION,
       mode: "live — Gemini 2.0 Flash + LazyFileReader",
     };
@@ -281,6 +296,9 @@ ${skeletonText}`;
     totalSessionTokens: totalTokens,
     filesReadOnDemand: filesRead,
     fileTokens,
+    indexCacheEnabled: cacheStatus.enabled,
+    indexCacheHit: cacheStatus.hit,
+    indexCacheFile: cacheStatus.cacheFile,
     question: QUESTION,
     mode: "mock — skeleton + lazy reader demonstrated without live API call",
   };

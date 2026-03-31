@@ -1,6 +1,8 @@
 import { Project, SourceFile } from "ts-morph";
 import * as path from "path";
 import * as fs from "fs";
+import * as crypto from "crypto";
+import { CacheManager } from "./CacheManager";
 
 export interface TypedSignature {
   name: string;
@@ -18,6 +20,49 @@ export interface IndexEntry {
 }
 
 export type RepoIndex = Record<string, IndexEntry>;
+
+export interface BuildIndexOptions {
+  useCache?: boolean;
+  cacheDir?: string;
+  cacheKey?: string;
+  forceRefresh?: boolean;
+}
+
+export interface IndexCacheStatus {
+  enabled: boolean;
+  hit: boolean;
+  layer?: "memory" | "disk" | "rebuild";
+  cacheFile?: string;
+  fingerprint?: string;
+}
+
+export interface BuildIndexWithCacheResult {
+  index: RepoIndex;
+  cache: IndexCacheStatus;
+}
+
+interface IndexCachePayload {
+  version: number;
+  targetDir: string;
+  fingerprint: string;
+  generatedAt: string;
+  index: RepoIndex;
+}
+
+export interface IndexCacheStats {
+  memory: {
+    size: number;
+    maxEntries: number;
+    ttlMs: number;
+  };
+  disk: {
+    cacheFile: string;
+    exists: boolean;
+  };
+}
+
+const INDEX_CACHE_VERSION = 1;
+const memoryIndexCache = new CacheManager<IndexCachePayload>({ maxEntries: 64, ttlMs: 15 * 60_000 });
 
 function getPackageName(filePath: string): string | undefined {
   let dir = path.dirname(filePath);
@@ -133,14 +178,9 @@ function extractSignatures(sourceFile: SourceFile): TypedSignature[] {
   return sigs;
 }
 
-export function buildIndex(targetDir: string): RepoIndex {
-  const project = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: { allowJs: false, skipLibCheck: true },
-  });
-
-  // Collect all .ts files (skip .d.ts, node_modules, dist, test files)
+function collectSourceFiles(targetDir: string): string[] {
   const tsFiles: string[] = [];
+
   function walk(dir: string) {
     if (!fs.existsSync(dir)) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -148,7 +188,10 @@ export function buildIndex(targetDir: string): RepoIndex {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(full);
-      } else if (
+        continue;
+      }
+
+      if (
         (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) &&
         !entry.name.endsWith(".d.ts") &&
         !entry.name.endsWith(".test.ts") &&
@@ -158,9 +201,19 @@ export function buildIndex(targetDir: string): RepoIndex {
       }
     }
   }
-  walk(targetDir);
 
-  project.addSourceFilesAtPaths(tsFiles);
+  walk(targetDir);
+  tsFiles.sort();
+  return tsFiles;
+}
+
+function buildIndexFromFiles(targetDir: string, sourceFiles: string[]): RepoIndex {
+  const project = new Project({
+    skipAddingFilesFromTsConfig: true,
+    compilerOptions: { allowJs: false, skipLibCheck: true },
+  });
+
+  project.addSourceFilesAtPaths(sourceFiles);
 
   const index: RepoIndex = {};
 
@@ -182,6 +235,142 @@ export function buildIndex(targetDir: string): RepoIndex {
   }
 
   return index;
+}
+
+function computeFingerprint(targetDir: string, sourceFiles: string[]): string {
+  const hash = crypto.createHash("sha256");
+  hash.update(`v${INDEX_CACHE_VERSION}|${path.resolve(targetDir)}`);
+
+  for (const absoluteFile of sourceFiles) {
+    const stats = fs.statSync(absoluteFile);
+    const relative = path.relative(targetDir, absoluteFile).replace(/\\/g, "/");
+    hash.update(`${relative}|${stats.size}|${stats.mtimeMs}`);
+  }
+
+  return hash.digest("hex");
+}
+
+function getCacheFilePath(targetDir: string, options: BuildIndexOptions): string {
+  const cacheRoot = path.resolve(options.cacheDir ?? path.join(process.cwd(), ".cache", "repo-index"));
+  const cacheSeed = options.cacheKey ?? path.resolve(targetDir);
+  const cacheId = crypto.createHash("sha256").update(cacheSeed).digest("hex").slice(0, 16);
+  fs.mkdirSync(cacheRoot, { recursive: true });
+  return path.join(cacheRoot, `${cacheId}.json`);
+}
+
+function readCache(cacheFile: string): IndexCachePayload | undefined {
+  if (!fs.existsSync(cacheFile)) return undefined;
+  try {
+    return JSON.parse(fs.readFileSync(cacheFile, "utf-8")) as IndexCachePayload;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeCache(cacheFile: string, payload: IndexCachePayload): void {
+  fs.writeFileSync(cacheFile, JSON.stringify(payload, null, 2));
+}
+
+function getMemoryCacheKey(targetDir: string, options: BuildIndexOptions): string {
+  return options.cacheKey ?? path.resolve(targetDir);
+}
+
+export function invalidateIndexCache(targetDir?: string, options: BuildIndexOptions = {}): void {
+  if (!targetDir) {
+    memoryIndexCache.clear();
+    return;
+  }
+
+  const resolvedTargetDir = path.resolve(targetDir);
+  const memoryKey = getMemoryCacheKey(resolvedTargetDir, options);
+  memoryIndexCache.delete(memoryKey);
+
+  const cacheFile = getCacheFilePath(resolvedTargetDir, options);
+  if (fs.existsSync(cacheFile)) {
+    fs.unlinkSync(cacheFile);
+  }
+}
+
+export function getIndexCacheStats(targetDir: string, options: BuildIndexOptions = {}): IndexCacheStats {
+  const resolvedTargetDir = path.resolve(targetDir);
+  const cacheFile = getCacheFilePath(resolvedTargetDir, options);
+  return {
+    memory: memoryIndexCache.stats(),
+    disk: {
+      cacheFile,
+      exists: fs.existsSync(cacheFile),
+    },
+  };
+}
+
+export function buildIndex(targetDir: string): RepoIndex {
+  return buildIndexWithCache(targetDir, { useCache: false }).index;
+}
+
+export function buildIndexWithCache(targetDir: string, options: BuildIndexOptions = {}): BuildIndexWithCacheResult {
+  const resolvedTargetDir = path.resolve(targetDir);
+  const sourceFiles = collectSourceFiles(resolvedTargetDir);
+  const useCache = options.useCache === true;
+
+  if (!useCache) {
+    return {
+      index: buildIndexFromFiles(resolvedTargetDir, sourceFiles),
+      cache: { enabled: false, hit: false },
+    };
+  }
+
+  const fingerprint = computeFingerprint(resolvedTargetDir, sourceFiles);
+  const cacheFile = getCacheFilePath(resolvedTargetDir, options);
+  const memoryKey = getMemoryCacheKey(resolvedTargetDir, options);
+
+  const inMemory = options.forceRefresh ? undefined : memoryIndexCache.get(memoryKey);
+  if (
+    inMemory &&
+    inMemory.version === INDEX_CACHE_VERSION &&
+    inMemory.targetDir === resolvedTargetDir &&
+    inMemory.fingerprint === fingerprint
+  ) {
+    return {
+      index: inMemory.index,
+      cache: { enabled: true, hit: true, cacheFile, fingerprint, layer: "memory" },
+    };
+  }
+
+  const cached = options.forceRefresh ? undefined : readCache(cacheFile);
+
+  if (
+    cached &&
+    cached.version === INDEX_CACHE_VERSION &&
+    cached.targetDir === resolvedTargetDir &&
+    cached.fingerprint === fingerprint
+  ) {
+    memoryIndexCache.set(memoryKey, cached);
+    return {
+      index: cached.index,
+      cache: { enabled: true, hit: true, cacheFile, fingerprint, layer: "disk" },
+    };
+  }
+
+  const index = buildIndexFromFiles(resolvedTargetDir, sourceFiles);
+  writeCache(cacheFile, {
+    version: INDEX_CACHE_VERSION,
+    targetDir: resolvedTargetDir,
+    fingerprint,
+    generatedAt: new Date().toISOString(),
+    index,
+  });
+  memoryIndexCache.set(memoryKey, {
+    version: INDEX_CACHE_VERSION,
+    targetDir: resolvedTargetDir,
+    fingerprint,
+    generatedAt: new Date().toISOString(),
+    index,
+  });
+
+  return {
+    index,
+    cache: { enabled: true, hit: false, cacheFile, fingerprint, layer: "rebuild" },
+  };
 }
 
 export function formatIndexForPrompt(index: RepoIndex): string {

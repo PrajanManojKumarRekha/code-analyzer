@@ -17,6 +17,10 @@ export const repoIndexToolDefinition = {
         type: "string",
         description: "Absolute path to the repository root or package directory to index",
       },
+      forceRefresh: {
+        type: "boolean",
+        description: "Bypass index cache and rebuild the semantic index.",
+      },
       domain: {
         type: "string",
         enum: ["mobile", "front-end", "fuselage", "message-routing", "rest-api", "authentication", "data-models", "all"],
@@ -58,5 +62,41 @@ export const lazyFileReaderToolDefinition = {
       },
     },
     required: ["path"],
+  },
+};
+
+export const indexCacheStatsToolDefinition = {
+  name: "index_cache_stats",
+  description:
+    "Return in-memory and disk index cache stats, plus read_file cache stats.",
+  parameters: {
+    type: "object",
+    properties: {
+      targetDir: {
+        type: "string",
+        description: "Absolute path to the repository root or package directory to inspect",
+      },
+    },
+    required: ["targetDir"],
+  },
+};
+
+export const indexCacheInvalidateToolDefinition = {
+  name: "index_cache_invalidate",
+  description:
+    "Invalidate repo index cache and optionally clear read_file caches.",
+  parameters: {
+    type: "object",
+    properties: {
+      targetDir: {
+        type: "string",
+        description: "Absolute path to the repository root or package directory to invalidate",
+      },
+      clearReadFileCache: {
+        type: "boolean",
+        description: "If true, clear read_file raw and symbols caches as well.",
+      },
+    },
+    required: ["targetDir"],
   },
 };

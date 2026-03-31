@@ -5,8 +5,10 @@
   "main": "dist/demo.js",
   "scripts": {
     "build": "tsc",
+    "start": "node dist/mcpLazyServer.js",
     "demo": "npx tsx src/demo.ts",
-    "mcp:server": "npx tsx src/mcpLazyServer.ts",
+    "mcp:server": "node dist/mcpLazyServer.js",
+    "mcp:server:dev": "npx tsx src/mcpLazyServer.ts",
     "demo:mcp": "npx tsx src/demo.ts --mode mcp",
     "test": "jest"
   },

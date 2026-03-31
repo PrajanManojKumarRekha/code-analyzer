@@ -1,6 +1,6 @@
 import * as path from "path";
-import { buildIndex, formatIndexForPrompt } from "./repoIndex";
-import { readFile } from "./LazyFileReader";
+import { buildIndexWithCache, formatIndexForPrompt, getIndexCacheStats, invalidateIndexCache } from "./repoIndex";
+import { clearReadFileCache, getReadFileCacheStats, readFile } from "./LazyFileReader";
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
@@ -45,6 +45,7 @@ const toolDefinitions = [
       type: "object",
       properties: {
         targetDir: { type: "string", description: "Directory path to index" },
+        forceRefresh: { type: "boolean", description: "Bypass index cache and rebuild" },
       },
       required: ["targetDir"],
     },
@@ -71,17 +72,37 @@ const toolDefinitions = [
       required: ["path", "baseDir"],
     },
   },
+  {
+    name: "index_cache_invalidate",
+    description: "Invalidate cached repository index data and optionally clear read_file cache.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetDir: { type: "string", description: "Directory path used by repo_index" },
+        clearReadFileCache: { type: "boolean", description: "Also clear LazyFileReader caches" },
+      },
+      required: ["targetDir"],
+    },
+  },
+  {
+    name: "index_cache_stats",
+    description: "Return memory and disk cache stats for repo_index and read_file caches.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetDir: { type: "string", description: "Directory path used by repo_index" },
+      },
+      required: ["targetDir"],
+    },
+  },
 ];
 
-let buffer = Buffer.alloc(0);
-
 function writeMessage(payload: JsonRpcSuccess | JsonRpcError): void {
-  const json = JSON.stringify(payload);
-  const out =
-    `Content-Length: ${Buffer.byteLength(json, "utf8")}\r\n` +
-    `Content-Type: ${CONTENT_TYPE}\r\n\r\n` +
-    json;
-  process.stdout.write(out);
+  const body = JSON.stringify(payload);
+  const header =
+    `Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n` +
+    `Content-Type: ${CONTENT_TYPE}\r\n\r\n`;
+  process.stdout.write(header + body);
 }
 
 function ok(id: string | number | null, result: unknown): void {
@@ -120,37 +141,27 @@ function handleToolCall(id: string | number | null, params?: ToolCallParams): vo
   const name = params?.name;
   const args = params?.arguments ?? {};
 
-  if (!name) {
-    fail(id, -32602, "Missing tool name");
-    return;
-  }
+  if (!name) { fail(id, -32602, "Missing tool name"); return; }
 
   if (name === "repo_index") {
     const targetDir = asString(args.targetDir);
-    if (!targetDir) {
-      fail(id, -32602, "repo_index requires targetDir");
-      return;
-    }
-
+    if (!targetDir) { fail(id, -32602, "repo_index requires targetDir"); return; }
     try {
       const resolvedBaseDir = path.resolve(targetDir);
-      const index = buildIndex(resolvedBaseDir);
+      const forceRefresh = asBoolean(args.forceRefresh) === true;
+      const indexResult = buildIndexWithCache(resolvedBaseDir, { useCache: true, forceRefresh });
+      const index = indexResult.index;
       const skeleton = formatIndexForPrompt(index);
       ok(id, {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                baseDir: resolvedBaseDir,
-                filesIndexed: Object.keys(index).length,
-                skeleton,
-              },
-              null,
-              2
-            ),
-          },
-        ],
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            baseDir: resolvedBaseDir,
+            filesIndexed: Object.keys(index).length,
+            skeleton,
+            cache: indexResult.cache,
+          }, null, 2),
+        }],
       });
     } catch (error: unknown) {
       fail(id, -32603, error instanceof Error ? error.message : String(error));
@@ -161,11 +172,7 @@ function handleToolCall(id: string | number | null, params?: ToolCallParams): vo
   if (name === "read_file") {
     const relativePath = asString(args.path);
     const baseDir = asString(args.baseDir);
-    if (!relativePath || !baseDir) {
-      fail(id, -32602, "read_file requires path and baseDir");
-      return;
-    }
-
+    if (!relativePath || !baseDir) { fail(id, -32602, "read_file requires path and baseDir"); return; }
     try {
       const result = readFile(path.join(baseDir, relativePath), {
         baseDir,
@@ -173,14 +180,51 @@ function handleToolCall(id: string | number | null, params?: ToolCallParams): vo
         symbolsOnly: asBoolean(args.symbolsOnly),
         lineRange: asLineRange(args.lineRange),
       });
+      ok(id, { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] });
+    } catch (error: unknown) {
+      fail(id, -32603, error instanceof Error ? error.message : String(error));
+    }
+    return;
+  }
 
+  if (name === "index_cache_invalidate") {
+    const targetDir = asString(args.targetDir);
+    if (!targetDir) { fail(id, -32602, "index_cache_invalidate requires targetDir"); return; }
+    try {
+      invalidateIndexCache(path.resolve(targetDir));
+      const clearFileCache = asBoolean(args.clearReadFileCache) === true;
+      if (clearFileCache) {
+        clearReadFileCache();
+      }
       ok(id, {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            targetDir: path.resolve(targetDir),
+            indexCacheInvalidated: true,
+            readFileCacheCleared: clearFileCache,
+          }, null, 2),
+        }],
+      });
+    } catch (error: unknown) {
+      fail(id, -32603, error instanceof Error ? error.message : String(error));
+    }
+    return;
+  }
+
+  if (name === "index_cache_stats") {
+    const targetDir = asString(args.targetDir);
+    if (!targetDir) { fail(id, -32602, "index_cache_stats requires targetDir"); return; }
+    try {
+      ok(id, {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            targetDir: path.resolve(targetDir),
+            indexCache: getIndexCacheStats(path.resolve(targetDir)),
+            readFileCache: getReadFileCacheStats(),
+          }, null, 2),
+        }],
       });
     } catch (error: unknown) {
       fail(id, -32603, error instanceof Error ? error.message : String(error));
@@ -193,74 +237,81 @@ function handleToolCall(id: string | number | null, params?: ToolCallParams): vo
 
 function handleRequest(request: JsonRpcRequest): void {
   const id = request.id ?? null;
-
   switch (request.method) {
-    case "initialize": {
+    case "initialize":
       ok(id, {
         protocolVersion: "2024-11-05",
-        serverInfo: {
-          name: SERVER_NAME,
-          version: SERVER_VERSION,
-        },
-        capabilities: {
-          tools: {},
-        },
+        serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
+        capabilities: { tools: {} },
       });
       return;
-    }
-    case "notifications/initialized": {
+    case "notifications/initialized":
       return;
-    }
-    case "tools/list": {
+    case "tools/list":
       ok(id, { tools: toolDefinitions });
       return;
-    }
-    case "tools/call": {
+    case "tools/call":
       handleToolCall(id, request.params as ToolCallParams | undefined);
       return;
-    }
-    default: {
+    default:
       fail(id, -32601, `Method not found: ${request.method}`);
-    }
   }
 }
 
-function parseFrames(): void {
-  while (true) {
-    const marker = buffer.indexOf("\r\n\r\n");
-    if (marker < 0) return;
+let inputBuffer = Buffer.alloc(0);
 
-    const headerText = buffer.slice(0, marker).toString("utf8");
-    const match = headerText.match(/Content-Length:\s*(\d+)/i);
-    if (!match) {
-      buffer = buffer.slice(marker + 4);
+function parseIncomingBuffer(): void {
+  while (true) {
+    const preview = inputBuffer.toString("utf8", 0, Math.min(inputBuffer.length, 32)).trimStart();
+    const likelyFramed = preview.startsWith("Content-Length:");
+
+    if (likelyFramed) {
+      const marker = inputBuffer.indexOf("\r\n\r\n");
+      if (marker < 0) return;
+
+      const headerText = inputBuffer.slice(0, marker).toString("utf8");
+      const match = headerText.match(/Content-Length:\s*(\d+)/i);
+      if (!match) {
+        inputBuffer = inputBuffer.slice(marker + 4);
+        continue;
+      }
+
+      const contentLength = Number.parseInt(match[1], 10);
+      const frameLength = marker + 4 + contentLength;
+      if (inputBuffer.length < frameLength) return;
+
+      const body = inputBuffer.slice(marker + 4, frameLength).toString("utf8");
+      inputBuffer = inputBuffer.slice(frameLength);
+
+      try {
+        const request = JSON.parse(body) as JsonRpcRequest;
+        handleRequest(request);
+      } catch {
+        fail(null, -32700, "Parse error");
+      }
       continue;
     }
 
-    const contentLength = Number.parseInt(match[1], 10);
-    const frameLength = marker + 4 + contentLength;
-    if (buffer.length < frameLength) return;
+    const newline = inputBuffer.indexOf("\n");
+    if (newline < 0) return;
 
-    const body = buffer.slice(marker + 4, frameLength).toString("utf8");
-    buffer = buffer.slice(frameLength);
+    const line = inputBuffer.slice(0, newline).toString("utf8").trim();
+    inputBuffer = inputBuffer.slice(newline + 1);
+    if (!line) continue;
 
-    let request: JsonRpcRequest;
     try {
-      request = JSON.parse(body) as JsonRpcRequest;
+      const request = JSON.parse(line) as JsonRpcRequest;
+      handleRequest(request);
     } catch {
       fail(null, -32700, "Parse error");
-      continue;
     }
-
-    handleRequest(request);
   }
 }
 
-process.stdin.on("data", chunk => {
-  buffer = Buffer.concat([buffer, chunk]);
-  parseFrames();
+process.stdin.on("data", (chunk: Buffer | string) => {
+  const piece = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
+  inputBuffer = Buffer.concat([inputBuffer, piece]);
+  parseIncomingBuffer();
 });
 
-process.stdin.on("error", () => {
-  process.exit(1);
-});
+process.stdin.on("error", () => process.exit(1));
